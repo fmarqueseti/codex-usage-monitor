@@ -1,0 +1,17 @@
+services:
+  tauri-build:
+    build:
+      context: .
+      dockerfile: Dockerfile.tauri
+    volumes:
+      - ./src:/workspace/src
+      - ./src-tauri:/workspace/src-tauri
+      - ./dist:/workspace/dist
+      - ./bin:/workspace/bin
+      - tauri-target:/workspace/src-tauri/target
+    command: >-
+      sh -c 'npm run tauri:build && mkdir -p /workspace/bin &&
+      cp -R /workspace/src-tauri/target/release/bundle/. /workspace/bin/'
+
+volumes:
+  tauri-target:

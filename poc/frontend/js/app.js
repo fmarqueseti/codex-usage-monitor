@@ -1,0 +1,11 @@
+const message = document.querySelector('#message');
+const cards = document.querySelector('#cards');
+const updated = document.querySelector('#updated');
+let snapshot = null;
+
+function state(percent) { if (percent===0) return 'exhausted'; if(percent<10)return'danger'; if(percent<25)return'critical'; if(percent<50)return'warning'; return'normal'; }
+function countdown(resetAt) { const seconds=Math.max(0,Math.floor((new Date(resetAt)-Date.now())/1000)); const d=Math.floor(seconds/86400), h=Math.floor(seconds%86400/3600), m=Math.floor(seconds%3600/60), s=seconds%60; return d ? `${d}d ${String(h).padStart(2,'0')}h ${String(m).padStart(2,'0')}m` : `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; }
+function render() { if(!snapshot)return; cards.innerHTML=['five_hour','weekly'].map(key=>{const w=snapshot[key];return `<article class="card ${state(w.remaining_percent)}"><h2>${w.name}</h2><div class="bar"><div class="fill" style="width:${w.remaining_percent}%"></div></div><p class="percent">${w.remaining_percent}% available</p><div class="meta">Used: ${w.used_percent}%<br>Reset: ${w.reset_text || new Date(w.reset_at).toLocaleString()}<br>⏱ <span data-reset="${w.reset_at}">${countdown(w.reset_at)}</span></div></article>`}).join(''); updated.textContent=`Atualizado: ${new Date(snapshot.captured_at).toLocaleString()}`; }
+async function load() { message.className='message'; message.textContent='Carregando dados do Codex...'; try { const response=await fetch('/api/usage'); if(!response.ok)throw new Error((await response.json()).detail||`HTTP ${response.status}`); snapshot=await response.json(); render(); message.textContent=''; } catch(error) { message.className='message error'; message.textContent=`⚠ Não foi possível consultar o Codex — ${error.message}`; } }
+document.querySelector('#refresh').addEventListener('click',load); setInterval(()=>{document.querySelectorAll('[data-reset]').forEach(el=>el.textContent=countdown(el.dataset.reset)); if(snapshot&&document.querySelector('[data-reset]')&&Date.now()>=new Date(document.querySelector('[data-reset]').dataset.reset))load()},1000); setInterval(load,60000); load();
+if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
