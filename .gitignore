@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+status.txt
+node_modules/
+dist/*
+!dist/.gitkeep
+src-tauri/target/
+src-tauri/gen/
+bin/*
+!bin/.gitkeep
