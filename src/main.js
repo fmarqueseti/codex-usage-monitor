@@ -5,6 +5,7 @@ import { USAGE_REFRESH_INTERVAL_MS } from './config.js';
 const app = document.querySelector('#app');
 app.innerHTML = `<main class="shell"><header><div><span class="eyebrow">CODEX</span><h1>Usage Monitor</h1></div><button id="refresh">↻ Atualizar</button></header><p id="message" class="message">Carregando dados do Codex...</p><section class="cards" id="cards"></section></main>`;
 
+const WINDOW_KEYS = ['five_hour', 'weekly', 'monthly'];
 let latest;
 let countdownTimer;
 
@@ -29,7 +30,7 @@ function level(percent) {
 }
 
 function render(data) {
-  document.querySelector('#cards').innerHTML = ['five_hour', 'weekly'].map((key) => {
+  document.querySelector('#cards').innerHTML = WINDOW_KEYS.filter((key) => data[key]).map((key) => {
     const item = data[key];
     const remaining = Math.max(0, Math.min(100, Number(item.remaining_percent)));
     return `<article class="card ${level(remaining)}"><h2>${item.name}</h2><div class="bar" aria-label="${remaining}% disponível"><i style="width:${remaining}%"></i></div><strong>${remaining}% available</strong><p>Used: ${item.used_percent}%<br>Reset: ${item.reset_text || '—'}<br><span class="countdown">⏱ ${formatCountdown(item.seconds_until_reset)}</span></p></article>`;
@@ -40,13 +41,14 @@ function startCountdown() {
   clearInterval(countdownTimer);
   countdownTimer = setInterval(() => {
     if (!latest) return;
-    latest.five_hour.seconds_until_reset = Math.max(0, latest.five_hour.seconds_until_reset - 1);
-    latest.weekly.seconds_until_reset = Math.max(0, latest.weekly.seconds_until_reset - 1);
+    WINDOW_KEYS.filter((key) => latest[key]).forEach((key) => {
+      latest[key].seconds_until_reset = Math.max(0, latest[key].seconds_until_reset - 1);
+    });
     document.querySelectorAll('.countdown').forEach((element, index) => {
-      const item = latest[index === 0 ? 'five_hour' : 'weekly'];
+      const item = latest[WINDOW_KEYS.filter((key) => latest[key])[index]];
       element.textContent = `⏱ ${formatCountdown(item.seconds_until_reset)}`;
     });
-    if (latest.five_hour.seconds_until_reset === 0 || latest.weekly.seconds_until_reset === 0) load();
+    if (WINDOW_KEYS.some((key) => latest[key]?.seconds_until_reset === 0)) load();
   }, 1000);
 }
 
