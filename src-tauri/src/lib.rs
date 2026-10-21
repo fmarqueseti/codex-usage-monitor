@@ -41,10 +41,11 @@ fn read_response(reader: &mut BufReader<impl std::io::Read>, id: i64) -> Result<
 fn normalize(result: &Value) -> Result<Value, String> {
     let snapshots = result.get("rateLimitsByLimitId").and_then(|v| v.get("codex"))
         .unwrap_or_else(|| result.get("rateLimits").unwrap_or(&Value::Null));
-    let mut windows: Vec<&Value> = ["primary", "secondary"].iter().filter_map(|key| snapshots.get(key))
-        .filter(|w| w.get("resetsAt").and_then(Value::as_i64).is_some() && w.get("usedPercent").and_then(Value::as_i64).is_some()).collect();
-    windows.sort_by_key(|w| w.get("windowDurationMins").and_then(Value::as_i64).unwrap_or(0));
-    if windows.len() < 2 { return Err("resposta não contém as janelas 5h e Weekly".into()); }
+    let mut windows: Vec<(&str, &Value)> = snapshots.as_object().into_iter().flat_map(|items| items.iter().map(|(key, value)| (key.as_str(), value)))
+        .filter(|(_, w)| w.get("resetsAt").and_then(Value::as_i64).is_some() && w.get("usedPercent").and_then(Value::as_i64).is_some())
+        .collect();
+    windows.sort_by_key(|(_, w)| w.get("windowDurationMins").and_then(Value::as_i64).unwrap_or(i64::MAX));
+    if windows.is_empty() { return Err("resposta não contém as janelas 5h, Weekly e Monthly".into()); }
     let now = Utc::now();
     let make_window = |name: &str, w: &Value| -> Result<Value, String> {
         let used = w["usedPercent"].as_i64().ok_or("usedPercent inválido")?.clamp(0, 100);
@@ -53,7 +54,30 @@ fn normalize(result: &Value) -> Result<Value, String> {
         let remaining = 100 - used;
         Ok(json!({"name":name,"remaining_percent":remaining,"used_percent":used,"reset_text":reset.format("%H:%M on %-d %b").to_string(),"reset_at":reset.to_rfc3339(),"seconds_until_reset":(reset.with_timezone(&Utc)-now).num_seconds().max(0)}))
     };
-    Ok(json!({"source":"codex app-server account/rateLimits/read","captured_at":now.with_timezone(&Local).to_rfc3339(),"five_hour":make_window("5-hour",windows[0])?,"weekly":make_window("Weekly",windows[1])?}))
+    let mut normalized = json!({"source":"codex app-server account/rateLimits/read","captured_at":now.with_timezone(&Local).to_rfc3339()});
+    for (key, window) in windows {
+        let duration = window.get("windowDurationMins").and_then(Value::as_i64);
+        let kind = match duration {
+            Some(minutes) if minutes <= 360 => Some(("five_hour", "5-hour")),
+            Some(minutes) if minutes <= 11520 => Some(("weekly", "Weekly")),
+            Some(_) => Some(("monthly", "Monthly")),
+            None => match key {
+                "monthly" | "tertiary" => Some(("monthly", "Monthly")),
+                "primary" | "five_hour" => Some(("five_hour", "5-hour")),
+                "secondary" | "weekly" => Some(("weekly", "Weekly")),
+                _ => None,
+            },
+        };
+        if let Some((field, name)) = kind {
+            if normalized.get(field).is_none() {
+                normalized[field] = make_window(name, window)?;
+            }
+        }
+    }
+    if !["five_hour", "weekly", "monthly"].iter().any(|field| normalized.get(*field).is_some()) {
+        return Err("resposta não contém as janelas 5h, Weekly e Monthly".into());
+    }
+    Ok(normalized)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
